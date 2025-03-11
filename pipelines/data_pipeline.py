@@ -26,7 +26,10 @@ class DataIngestion:
             config: Configuration dictionary with data source details
         """
         self.config = config
-        self.data_dir = Path(config.get('data_dir', 'data'))
+        
+        # Map input_path to source_path if provided
+        if 'input_path' in config and config['input_path']:
+            self.config['source_path'] = str(Path(config['input_path']))
         
     def load_data(self) -> pd.DataFrame:
         """Load data from the specified source.
@@ -37,19 +40,27 @@ class DataIngestion:
         source_type = self.config.get('source_type', 'csv')
         source_path = self.config.get('source_path')
         
+        # If source_path is not provided, use input_path
         if not source_path:
-            raise ValueError("Source path must be specified in the configuration")
+            source_path = self.config.get('input_path')
+            if source_path:
+                # Update the config with the source_path
+                self.config['source_path'] = str(Path(source_path))
             
-        full_path = self.data_dir / source_path
+        if isinstance(source_path, list):
+            source_path = source_path[0]
+
+        if not source_path or not os.path.exists(source_path):
+            raise ValueError(f"Source path must be specified in the configuration and must exist. Path: {source_path}")
         
-        logger.info(f"Loading data from {full_path}")
+        logger.info(f"Loading data from {source_path}")
         
         if source_type == 'csv':
-            return pd.read_csv(full_path)
+            return pd.read_csv(source_path)
         elif source_type == 'parquet':
-            return pd.read_parquet(full_path)
+            return pd.read_parquet(source_path)
         elif source_type == 'json':
-            return pd.read_json(full_path)
+            return pd.read_json(source_path)
         else:
             raise ValueError(f"Unsupported data source type: {source_type}")
 
@@ -119,6 +130,7 @@ class DataPreprocessor:
         """
         self.config = config
         self.preprocessing_steps = config.get('preprocessing_steps', [])
+        self.encoders = {}
         
     def preprocess(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply preprocessing steps to the data.
@@ -131,13 +143,63 @@ class DataPreprocessor:
         """
         processed_data = data.copy()
         
+        # Process each step in order
         for step in self.preprocessing_steps:
             step_type = step.get('type')
             
-            if step_type == 'drop_columns':
+            # Handle drop duplicates
+            if step_type == 'drop_duplicates':
+                processed_data = processed_data.drop_duplicates()
+                logger.info(f"Dropped duplicate rows. New shape: {processed_data.shape}")
+            
+            # Handle categorical encoding
+            elif step_type == 'encode_categorical':
                 columns = step.get('columns', [])
-                processed_data = processed_data.drop(columns=columns, errors='ignore')
+                method = step.get('method', 'label')
                 
+                for col in columns:
+                    if col in processed_data.columns:
+                        if method == 'label':
+                            # Label encoding (convert to numeric codes)
+                            from sklearn.preprocessing import LabelEncoder
+                            if col not in self.encoders:
+                                self.encoders[col] = LabelEncoder()
+                                self.encoders[col].fit(processed_data[col])
+                            
+                            processed_data[col] = self.encoders[col].transform(processed_data[col])
+                            # Ensure the column is converted to float to avoid type issues with models
+                            processed_data[col] = processed_data[col].astype('float')
+                            logger.info(f"Label encoded column: {col}")
+                        elif method == 'label_encode':
+                            # Alternative label encoding for compatibility with test cases
+                            from sklearn.preprocessing import LabelEncoder
+                            if col not in self.encoders:
+                                self.encoders[col] = LabelEncoder()
+                                self.encoders[col].fit(processed_data[col])
+                            
+                            processed_data[col] = self.encoders[col].transform(processed_data[col])
+                            processed_data[col] = processed_data[col].astype('float')
+                            logger.info(f"Label encoded column: {col}")
+                        elif method == 'one_hot':
+                            # One-hot encoding
+                            one_hot = pd.get_dummies(processed_data[col], prefix=col, drop_first=step.get('drop_first', False))
+                            processed_data = pd.concat([processed_data.drop(columns=[col]), one_hot], axis=1)
+                            logger.info(f"One-hot encoded column: {col}")
+            
+            # Handle numerical scaling
+            elif step_type == 'scale_numerical':
+                columns = step.get('columns', [])
+                for col in columns:
+                    if col in processed_data.columns:
+                        # Ensure column is numeric before scaling
+                        if pd.api.types.is_numeric_dtype(processed_data[col]):
+                            # Standardize to mean=0, std=1
+                            processed_data[col] = (processed_data[col] - processed_data[col].mean()) / processed_data[col].std()
+                            logger.info(f"Scaled numerical column: {col}")
+                        else:
+                            logger.warning(f"Column {col} is not numeric and cannot be scaled. Skipping.")
+            
+            # Handle missing values
             elif step_type == 'fill_missing':
                 columns = step.get('columns', processed_data.columns.tolist())
                 method = step.get('method', 'mean')
@@ -152,14 +214,15 @@ class DataPreprocessor:
                             processed_data[col] = processed_data[col].fillna(processed_data[col].mode()[0])
                         elif method == 'constant':
                             processed_data[col] = processed_data[col].fillna(step.get('value', 0))
+                        logger.info(f"Filled missing values in column: {col} using {method}")
             
-            elif step_type == 'encode_categorical':
+            # Handle dropping columns
+            elif step_type == 'drop_columns':
                 columns = step.get('columns', [])
-                method = step.get('method', 'one_hot')
-                
-                if method == 'one_hot':
-                    processed_data = pd.get_dummies(processed_data, columns=columns, drop_first=step.get('drop_first', False))
-                # Add more encoding methods as needed
+                processed_data = processed_data.drop(columns=columns, errors='ignore')
+                logger.info(f"Dropped columns: {columns}")
+        
+        # Additional preprocessing steps are already handled in the main preprocessing loop above
         
         logger.info(f"Data preprocessing completed. Shape: {processed_data.shape}")
         return processed_data
@@ -175,7 +238,13 @@ class DataPipeline:
             config: Configuration dictionary for the pipeline
         """
         self.config = config
-        self.ingestion = DataIngestion(config.get('ingestion', {}))
+        
+        # Create ingestion config with input_path if provided
+        ingestion_config = config.get('ingestion', {})
+        if 'input_path' in config and config['input_path']:
+            ingestion_config['input_path'] = config['input_path']
+            
+        self.ingestion = DataIngestion(ingestion_config)
         self.validator = DataValidator(config.get('validation_schema'))
         self.preprocessor = DataPreprocessor(config.get('preprocessing', {}))
         
@@ -197,6 +266,13 @@ class DataPipeline:
         # Preprocess data
         processed_data = self.preprocessor.preprocess(raw_data)
         
+        # Save processed data if output_path is specified
+        output_path = self.config.get('output_path')
+        if output_path:
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            processed_data.to_csv(output_path, index=False)
+            logger.info(f"Saved processed data to {output_path}")
+        
         # Prepare metadata
         metadata = {
             'raw_shape': raw_data.shape,
@@ -207,19 +283,22 @@ class DataPipeline:
         return processed_data, metadata
 
 
-def create_data_pipeline(config_path: str) -> DataPipeline:
-    """Factory function to create a data pipeline from a configuration file.
+def create_data_pipeline(config_path: str | dict) -> DataPipeline:
+    """Factory function to create a data pipeline from a configuration file or dictionary.
     
     Args:
-        config_path: Path to the configuration file
+        config_path: Path to the configuration file or configuration dictionary
         
     Returns:
         Configured DataPipeline instance
     """
     import json
     
-    with open(config_path, 'r') as f:
-        config = json.load(f)
+    if isinstance(config_path, dict):
+        config = config_path
+    else:
+        with open(config_path, 'r') as f:
+            config = json.load(f)
     
     return DataPipeline(config)
 
