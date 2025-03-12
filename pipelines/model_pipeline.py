@@ -391,7 +391,28 @@ if __name__ == "__main__":
             'task_type': 'classification',
             'model_params': {
                 'n_estimators': 100,
-                'max_depth': 10
+                'max_depth': 10,
+                'random_state': 42
             }
-        }
+        },
+        'evaluator': {
+            'task_type': 'classification',
+            'metrics': ['accuracy', 'precision', 'recall', 'f1']
+        },
+        'registry': {
+            'experiment_name': 'example_experiment',
+            'model_name': 'example_model'
+        },
+        'test_size': 0.2,
+        'val_size': 0.25,
+        'random_state': 42,
+        'register_model': True
     }
+    
+    # Create a sample config file
+    os.makedirs('data/config', exist_ok=True)
+    with open('data/config/sample_model_config.json', 'w') as f:
+        json.dump(sample_config, f, indent=4)
+    
+    print("Created sample model configuration at data/config/sample_model_config.json")
+    print("To run the model pipeline, use: create_model_pipeline('data/config/sample_model_config.json')")
