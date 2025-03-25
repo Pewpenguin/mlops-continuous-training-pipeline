@@ -46,6 +46,7 @@ mlops-continuous-training-pipeline/
 Make this repository a template for any ML project that requires production-level automation and maintenance.
 
 ## 📅 Status
-🛠️ Initial setup in progress. Pipeline skeletons and first toy model will be added soon.
+✅ FastAPI model serving application implemented with endpoints for predictions, health checks, and model listing.
+🛠️ Data and model pipelines in progress. Monitoring module for model performance and data drift detection under development.
 
 🔥 Contributions, feedback, and collaborations are welcome!

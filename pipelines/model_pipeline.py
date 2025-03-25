@@ -280,7 +280,7 @@ class ModelPipeline:
         self.val_size = config.get('val_size', 0.25)  # % of test_size
         self.random_state = config.get('random_state', 42)
         
-    def run(self, X: np.ndarray, y: np.ndarray, run_name: str) -> Dict[str, Any]:
+    def run(self, data: pd.DataFrame, target_column: str) -> Dict[str, Any]:
         """Run the full model pipeline.
         
         Args:
@@ -290,25 +290,10 @@ class ModelPipeline:
         Returns:
             Dictionary with pipeline results
         """
-        # Handle categorical features if present
-        if isinstance(X, np.ndarray) and X.dtype == object:
-            # Convert categorical features to numeric
-            from sklearn.preprocessing import LabelEncoder
-            X_processed = np.zeros((X.shape[0], X.shape[1]), dtype=float)
-            
-            for i in range(X.shape[1]):
-                col_data = X[:, i]
-                if isinstance(col_data[0], str):
-                    # This is a categorical column, encode it
-                    encoder = LabelEncoder()
-                    X_processed[:, i] = encoder.fit_transform(col_data)
-                else:
-                    # This is already numeric
-                    X_processed[:, i] = col_data
-            
-            # Use the processed data for training
-            X = X_processed
-            
+        # Split data into features and target
+        X = data.drop(columns=[target_column])
+        y = data[target_column]
+        
         # Split data into train, validation, and test sets
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=self.test_size, random_state=self.random_state
@@ -349,7 +334,6 @@ class ModelPipeline:
             'model_type': self.config.get('trainer', {}).get('model_type', 'unknown'),
             'val_metrics': val_metrics,
             'test_metrics': test_metrics,
-            'metrics': val_metrics,  # Add metrics key with validation metrics
             'model_path': model_path,
             'mlflow_run_id': run_id
         }
@@ -360,22 +344,19 @@ class ModelPipeline:
         return results
 
 
-def create_model_pipeline(config_path: str | dict) -> ModelPipeline:
-    """Factory function to create a model pipeline from a configuration file or dictionary.
+def create_model_pipeline(config_path: str) -> ModelPipeline:
+    """Factory function to create a model pipeline from a configuration file.
     
     Args:
-        config_path: Path to the configuration file or configuration dictionary
+        config_path: Path to the configuration file
         
     Returns:
         Configured ModelPipeline instance
     """
     import json
     
-    if isinstance(config_path, dict):
-        config = config_path
-    else:
-        with open(config_path, 'r') as f:
-            config = json.load(f)
+    with open(config_path, 'r') as f:
+        config = json.load(f)
     
     return ModelPipeline(config)
 
@@ -391,28 +372,7 @@ if __name__ == "__main__":
             'task_type': 'classification',
             'model_params': {
                 'n_estimators': 100,
-                'max_depth': 10,
-                'random_state': 42
+                'max_depth': 10
             }
-        },
-        'evaluator': {
-            'task_type': 'classification',
-            'metrics': ['accuracy', 'precision', 'recall', 'f1']
-        },
-        'registry': {
-            'experiment_name': 'example_experiment',
-            'model_name': 'example_model'
-        },
-        'test_size': 0.2,
-        'val_size': 0.25,
-        'random_state': 42,
-        'register_model': True
+        }
     }
-    
-    # Create a sample config file
-    os.makedirs('data/config', exist_ok=True)
-    with open('data/config/sample_model_config.json', 'w') as f:
-        json.dump(sample_config, f, indent=4)
-    
-    print("Created sample model configuration at data/config/sample_model_config.json")
-    print("To run the model pipeline, use: create_model_pipeline('data/config/sample_model_config.json')")

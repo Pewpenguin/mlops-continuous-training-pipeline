@@ -25,6 +25,7 @@ venv/
 env/
 ENV/
 .env
+pyenv.cfg
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -32,19 +33,29 @@ ENV/
 # MLflow
 mlruns/
 mlartifacts/
+mlflow-tracking/
 
 # DVC
 .dvc/cache
 /data
+*.dvc
 
 # Model artifacts
 /models
+*.pkl
+*.joblib
+*.h5
+*.pt
+*.onnx
 
 # IDE specific files
 .idea/
 .vscode/
 *.swp
 *.swo
+.spyderproject
+.spyproject
+.ropeproject
 
 # OS specific files
 .DS_Store
@@ -53,6 +64,28 @@ Thumbs.db
 # Logs
 logs/
 *.log
+log.txt
 
 # Distribution / packaging
 .Python
+.coverage
+coverage.xml
+.pytest_cache/
+htmlcov/
+
+# Airflow
+airflow.cfg
+airflow.db
+unittests.cfg
+webserver_config.py
+logs/
+
+# FastAPI
+__pycache__/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*.swo
+*~

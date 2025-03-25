@@ -1,4 +1,4 @@
-\"""Data Drift Monitoring Module
+"""Data Drift Monitoring Module
 
 This module provides functionality for detecting data drift between reference and current datasets.
 It helps identify when model retraining might be necessary due to changes in data distribution.
@@ -354,4 +354,235 @@ class ModelPerformanceMonitor:
             lower_is_better = self.config.get('lower_is_better_metrics', [])
             
             if metric_name in higher_is_better:
-                degrade
+                degraded = relative_change < -self.metrics_threshold
+            elif metric_name in lower_is_better:
+                degraded = relative_change > self.metrics_threshold
+            else:
+                # Default: assume higher is better
+                degraded = relative_change < -self.metrics_threshold
+            
+            # Store metric change results
+            results['metric_changes'][metric_name] = {
+                'baseline_value': baseline_value,
+                'current_value': current_value,
+                'relative_change': relative_change,
+                'degraded': degraded
+            }
+            
+            if degraded:
+                results['degraded_metrics'] += 1
+        
+        # Calculate overall degradation score
+        if results['total_metrics'] > 0:
+            degradation_score = results['degraded_metrics'] / results['total_metrics']
+            results['degradation_score'] = degradation_score
+            
+            # Determine if performance degradation is detected
+            degradation_threshold = self.config.get('overall_degradation_threshold', 0.3)  # Default 30% of metrics
+            results['performance_degradation_detected'] = degradation_score >= degradation_threshold
+        
+        # Generate performance report
+        report_path = self._generate_performance_report(current_metrics)
+        results['report_path'] = report_path
+        
+        logger.info(f"Performance degradation detection completed. Degradation detected: {results['performance_degradation_detected']}")
+        logger.info(f"Degradation score: {results.get('degradation_score', 0):.2f} ({results['degraded_metrics']} out of {results['total_metrics']} metrics)")
+        
+        return results
+    
+    def _generate_performance_report(self, current_metrics: Dict[str, float]) -> str:
+        """Generate performance report with visualizations.
+        
+        Args:
+            current_metrics: Current model performance metrics
+            
+        Returns:
+            Path to the generated report
+        """
+        try:
+            import matplotlib.pyplot as plt
+            import seaborn as sns
+            from matplotlib.figure import Figure
+            
+            # Create a figure for the report
+            fig, ax = plt.subplots(figsize=(12, 8))
+            
+            # Prepare data for plotting
+            metrics = []
+            baseline_values = []
+            current_values = []
+            changes = []
+            
+            for metric_name, current_value in current_metrics.items():
+                if metric_name not in self.baseline_metrics:
+                    continue
+                    
+                baseline_value = self.baseline_metrics[metric_name]
+                
+                # Calculate relative change
+                if baseline_value != 0:
+                    relative_change = (current_value - baseline_value) / abs(baseline_value) * 100  # as percentage
+                else:
+                    relative_change = float('inf') if current_value != 0 else 0
+                
+                metrics.append(metric_name)
+                baseline_values.append(baseline_value)
+                current_values.append(current_value)
+                changes.append(relative_change)
+            
+            # Create a DataFrame for easier plotting
+            import pandas as pd
+            df = pd.DataFrame({
+                'Metric': metrics,
+                'Baseline': baseline_values,
+                'Current': current_values,
+                'Change (%)': changes
+            })
+            
+            # Sort by absolute change
+            df['Abs Change'] = df['Change (%)'].abs()
+            df = df.sort_values('Abs Change', ascending=False)
+            
+            # Plot the comparison
+            if len(df) > 0:
+                # Bar chart for baseline vs current
+                df_melted = pd.melt(df, id_vars=['Metric'], value_vars=['Baseline', 'Current'])
+                sns.barplot(x='Metric', y='value', hue='variable', data=df_melted, ax=ax)
+                ax.set_title('Model Performance Metrics: Baseline vs Current')
+                ax.set_ylabel('Metric Value')
+                ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right')
+                
+                # Save the figure
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                report_path = os.path.join(self.reports_dir, f"performance_report_{timestamp}.png")
+                plt.tight_layout()
+                plt.savefig(report_path)
+                plt.close()
+                
+                # Create HTML report with additional details
+                html_report_path = os.path.join(self.reports_dir, f"performance_report_{timestamp}.html")
+                
+                # Generate HTML content
+                html_content = f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Model Performance Report</title>
+                    <style>
+                        body {{ font-family: Arial, sans-serif; margin: 20px; }}
+                        table {{ border-collapse: collapse; width: 100%; }}
+                        th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+                        th {{ background-color: #f2f2f2; }}
+                        tr:nth-child(even) {{ background-color: #f9f9f9; }}
+                        .degraded {{ color: red; font-weight: bold; }}
+                        .improved {{ color: green; font-weight: bold; }}
+                    </style>
+                </head>
+                <body>
+                    <h1>Model Performance Monitoring Report</h1>
+                    <p>Generated on: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
+                    
+                    <h2>Performance Metrics</h2>
+                    <table>
+                        <tr>
+                            <th>Metric</th>
+                            <th>Baseline Value</th>
+                            <th>Current Value</th>
+                            <th>Change (%)</th>
+                        </tr>
+                """
+                
+                # Add rows for each metric
+                for _, row in df.iterrows():
+                    metric = row['Metric']
+                    baseline = row['Baseline']
+                    current = row['Current']
+                    change = row['Change (%)']
+                    
+                    # Determine if this metric is better or worse
+                    higher_is_better = self.config.get('higher_is_better_metrics', [])
+                    lower_is_better = self.config.get('lower_is_better_metrics', [])
+                    
+                    if metric in higher_is_better:
+                        is_degraded = change < -self.metrics_threshold * 100
+                        is_improved = change > self.metrics_threshold * 100
+                    elif metric in lower_is_better:
+                        is_degraded = change > self.metrics_threshold * 100
+                        is_improved = change < -self.metrics_threshold * 100
+                    else:
+                        # Default: assume higher is better
+                        is_degraded = change < -self.metrics_threshold * 100
+                        is_improved = change > self.metrics_threshold * 100
+                    
+                    # Format the row based on degradation/improvement
+                    if is_degraded:
+                        class_name = "degraded"
+                    elif is_improved:
+                        class_name = "improved"
+                    else:
+                        class_name = ""
+                    
+                    html_content += f"""
+                        <tr>
+                            <td>{metric}</td>
+                            <td>{baseline:.4f}</td>
+                            <td>{current:.4f}</td>
+                            <td class="{class_name}">{change:.2f}%</td>
+                        </tr>
+                    """
+                
+                # Close the HTML content
+                html_content += f"""
+                    </table>
+                    
+                    <h2>Visualization</h2>
+                    <img src="{os.path.basename(report_path)}" alt="Performance Metrics Visualization" style="max-width: 100%;"/>
+                    
+                    <h2>Summary</h2>
+                    <p>Total metrics evaluated: {len(df)}</p>
+                    <p>Metrics showing degradation: {sum(1 for _, row in df.iterrows() if (row['Change (%)'] < -self.metrics_threshold * 100 if row['Metric'] in higher_is_better else row['Change (%)'] > self.metrics_threshold * 100))}</p>
+                    <p>Metrics showing improvement: {sum(1 for _, row in df.iterrows() if (row['Change (%)'] > self.metrics_threshold * 100 if row['Metric'] in higher_is_better else row['Change (%)'] < -self.metrics_threshold * 100))}</p>
+                </body>
+                </html>
+                """
+                
+                # Write HTML content to file
+                with open(html_report_path, 'w') as f:
+                    f.write(html_content)
+                
+                logger.info(f"Performance report saved to {html_report_path}")
+                return html_report_path
+            else:
+                logger.warning("No metrics to plot in performance report")
+                return None
+        except Exception as e:
+            logger.error(f"Error generating performance report: {str(e)}")
+            return None
+    
+    def save_current_metrics_as_baseline(self, current_metrics: Dict[str, float], path: Optional[str] = None) -> str:
+        """Save current metrics as new baseline.
+        
+        Args:
+            current_metrics: Current model performance metrics to save as baseline
+            path: Optional path to save the baseline metrics
+            
+        Returns:
+            Path to the saved baseline metrics file
+        """
+        if path:
+            save_path = path
+        else:
+            # Generate a new path if not provided
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            save_path = os.path.join(self.reports_dir, f"baseline_metrics_{timestamp}.json")
+        
+        # Save metrics to file
+        with open(save_path, 'w') as f:
+            json.dump(current_metrics, f, indent=4)
+        
+        # Update the current baseline metrics
+        self.baseline_metrics = current_metrics
+        self.baseline_metrics_path = save_path
+        
+        logger.info(f"Saved current metrics as new baseline to {save_path}")
+        return save_path
