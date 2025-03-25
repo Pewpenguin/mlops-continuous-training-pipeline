@@ -12,8 +12,10 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import logging
+from dotenv import load_dotenv
 from pipelines.data_pipeline import create_data_pipeline
 from pipelines.model_pipeline import create_model_pipeline
+from pipelines.mlflow_utils import load_mlflow_config, setup_mlflow
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -21,6 +23,13 @@ logger = logging.getLogger(__name__)
 
 def main():
     """Run the model pipeline."""
+    # Load environment variables from .env file
+    load_dotenv()
+    
+    # Setup MLflow tracking
+    mlflow_config = load_mlflow_config()
+    setup_mlflow()
+    
     # Path to the configuration files
     data_config_path = 'data/config/sample_pipeline_config.json'
     model_config_path = 'data/config/sample_model_config.json'
@@ -47,8 +56,7 @@ def main():
                 'task_type': 'classification',  # or 'regression'
                 'model_params': {
                     'n_estimators': 100,
-                    'max_depth': 10,
-                    'random_state': 42
+                    'max_depth': 10
                 }
             },
             'evaluator': {
@@ -56,9 +64,9 @@ def main():
                 'metrics': ['accuracy', 'precision', 'recall', 'f1']  # or ['mse', 'rmse', 'mae', 'r2'] for regression
             },
             'registry': {
-                'experiment_name': 'sample_experiment',
+                'experiment_name': os.environ.get('MLFLOW_EXPERIMENT_NAME', 'sample_experiment'),
                 'model_name': 'sample_model',
-                'tracking_uri': None  # Set to MLflow tracking server URI if available
+                'tracking_uri': os.environ.get('MLFLOW_TRACKING_URI', './mlruns')
             },
             'test_size': 0.2,
             'val_size': 0.25,
@@ -75,7 +83,7 @@ def main():
         model_config = json.load(f)
     
     # Create model pipeline
-    model_pipeline = create_model_pipeline(model_config)
+    model_pipeline = create_model_pipeline(model_config_path)
     
     # Prepare data for model training
     target_column = model_config.get('target_column', 'target')

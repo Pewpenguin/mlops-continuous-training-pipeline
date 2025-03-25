@@ -182,25 +182,32 @@ class ModelRegistry:
         Args:
             config: Configuration dictionary with registry parameters
         """
-        self.config = config
-        self.experiment_name = config.get('experiment_name', 'default')
-        self.model_name = config.get('model_name', 'default_model')
-        self.tracking_uri = config.get('tracking_uri', None)
+        from .mlflow_utils import load_mlflow_config, setup_mlflow
         
-        # Set MLflow tracking URI if provided
-        if self.tracking_uri:
-            mlflow.set_tracking_uri(self.tracking_uri)
+        self.config = config
+        
+        # Load MLflow configuration from environment variables
+        mlflow_config = load_mlflow_config()
+        
+        # Override with config values if provided
+        self.experiment_name = config.get('experiment_name', mlflow_config['experiment_name'])
+        self.model_name = config.get('model_name', 'default_model')
+        self.tracking_uri = config.get('tracking_uri', mlflow_config['tracking_uri'])
+        
+        # Set MLflow tracking URI
+        mlflow.set_tracking_uri(self.tracking_uri)
         
         # Set or create the experiment
         try:
             self.experiment_id = mlflow.create_experiment(self.experiment_name)
+            logger.info(f"Created new MLflow experiment '{self.experiment_name}' with ID: {self.experiment_id}")
         except:
-            self.experiment_id = mlflow.get_experiment_by_name(self.experiment_name).experiment_id
-            
-        logger.info(f"Using MLflow experiment '{self.experiment_name}' with ID: {self.experiment_id}")
+            experiment = mlflow.get_experiment_by_name(self.experiment_name)
+            self.experiment_id = experiment.experiment_id
+            logger.info(f"Using existing MLflow experiment '{self.experiment_name}' with ID: {self.experiment_id}")
     
     def log_model(self, model: BaseEstimator, metrics: Dict[str, float], params: Dict[str, Any], 
-                 artifacts: Optional[Dict[str, str]] = None) -> str:
+                 artifacts: Optional[Dict[str, str]] = None, run_name: Optional[str] = None) -> str:
         """Log a model to MLflow with its metrics, parameters, and artifacts.
         
         Args:
@@ -208,11 +215,12 @@ class ModelRegistry:
             metrics: Evaluation metrics
             params: Model parameters
             artifacts: Optional dictionary of artifact paths to log
+            run_name: Optional name for the MLflow run
             
         Returns:
             Run ID of the logged model
         """
-        with mlflow.start_run(experiment_id=self.experiment_id) as run:
+        with mlflow.start_run(experiment_id=self.experiment_id, run_name=run_name) as run:
             # Log parameters
             for param_name, param_value in params.items():
                 mlflow.log_param(param_name, param_value)
@@ -280,19 +288,22 @@ class ModelPipeline:
         self.val_size = config.get('val_size', 0.25)  # % of test_size
         self.random_state = config.get('random_state', 42)
         
-    def run(self, data: pd.DataFrame, target_column: str) -> Dict[str, Any]:
+    def run(self, X: np.ndarray, y: np.ndarray, run_name: str = None) -> Dict[str, Any]:
         """Run the full model pipeline.
         
         Args:
-            data: Preprocessed data for model training
-            target_column: Name of the target column
+            X: Feature matrix for model training
+            y: Target vector for model training
+            run_name: Optional name for the MLflow run
             
         Returns:
             Dictionary with pipeline results
         """
-        # Split data into features and target
-        X = data.drop(columns=[target_column])
-        y = data[target_column]
+        # Convert numpy arrays to pandas if needed
+        if isinstance(X, np.ndarray):
+            X = pd.DataFrame(X)
+        if isinstance(y, np.ndarray):
+            y = pd.Series(y)
         
         # Split data into train, validation, and test sets
         X_train, X_test, y_train, y_test = train_test_split(
@@ -320,7 +331,8 @@ class ModelPipeline:
             model=model,
             metrics={**val_metrics, **{f"test_{k}": v for k, v in test_metrics.items()}},
             params=self.config.get('trainer', {}).get('model_params', {}),
-            artifacts={"model": model_path}
+            artifacts={"model": model_path},
+            run_name=run_name
         )
         
         # Register model if specified
