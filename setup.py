@@ -8,7 +8,9 @@ extras_require = {
         'black>=23.3.0',
         'isort>=5.12.0',
         'flake8>=6.0.0',
-        'mypy>=1.3.0'
+        'mypy>=1.3.0',
+        'wheel>=0.42.0',
+        'setuptools>=69.0.0'
     ]
 }
 

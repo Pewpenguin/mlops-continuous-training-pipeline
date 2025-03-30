@@ -31,7 +31,7 @@ A comprehensive MLOps pipeline for managing the complete lifecycle of machine le
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/mlopps.git
+git clone https://github.com/Pewpenguin/mlops-continuous-training-pipeline
 cd mlopps
 ```
 
