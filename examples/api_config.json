@@ -1,0 +1,34 @@
+{
+    "api": {
+        "host": "0.0.0.0",
+        "port": 8000,
+        "workers": 4,
+        "debug": false,
+        "cors_origins": ["*"],
+        "api_version": "v1"
+    },
+    "model": {
+        "model_path": "models/production_model",
+        "model_version": "latest",
+        "batch_size": 32,
+        "preprocessing_pipeline": "preprocessing/pipeline.pkl"
+    },
+    "monitoring": {
+        "enable_request_logging": true,
+        "enable_prediction_logging": true,
+        "log_retention_days": 30
+    },
+    "security": {
+        "enable_authentication": true,
+        "auth_type": "api_key",
+        "rate_limit": {
+            "requests_per_minute": 100,
+            "burst_size": 20
+        }
+    },
+    "caching": {
+        "enable_caching": true,
+        "cache_ttl_seconds": 3600,
+        "max_cache_size": 1000
+    }
+}

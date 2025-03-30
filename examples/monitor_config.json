@@ -1,0 +1,34 @@
+{
+    "monitoring": {
+        "data_drift": {
+            "feature_drift_threshold": 0.1,
+            "target_drift_threshold": 0.05,
+            "statistical_test": "ks_test",
+            "significance_level": 0.05
+        },
+        "model_performance": {
+            "metrics": ["accuracy", "f1", "precision", "recall"],
+            "performance_threshold": 0.9,
+            "alert_threshold": 0.1
+        },
+        "data_quality": {
+            "missing_values_threshold": 0.1,
+            "outlier_threshold": 3.0,
+            "data_type_validation": true
+        }
+    },
+    "scheduling": {
+        "monitoring_frequency": "daily",
+        "batch_size": 1000,
+        "retention_period_days": 30
+    },
+    "reporting": {
+        "generate_report": true,
+        "report_format": "html",
+        "email_notifications": true
+    },
+    "storage": {
+        "metrics_store": "mlflow",
+        "logs_retention_days": 90
+    }
+}

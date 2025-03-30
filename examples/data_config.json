@@ -1,0 +1,20 @@
+{
+    "data_source": "data/raw/dataset.csv",
+    "features": ["feature1", "feature2", "feature3"],
+    "target_column": "target",
+    "test_size": 0.2,
+    "random_state": 42,
+    "preprocessing": {
+        "scaling": "standard",
+        "encoding": "label",
+        "missing_values": "mean"
+    },
+    "feature_engineering": {
+        "polynomial_features": false,
+        "interaction_features": false
+    },
+    "validation": {
+        "cross_validation_folds": 5,
+        "stratify": true
+    }
+}
