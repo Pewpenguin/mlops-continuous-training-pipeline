@@ -11,6 +11,7 @@ import numpy as np
 from typing import Dict, Any, Optional, Tuple
 import logging
 from pathlib import Path
+from typing import Union
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -283,7 +284,7 @@ class DataPipeline:
         return processed_data, metadata
 
 
-def create_data_pipeline(config_path: str | dict) -> DataPipeline:
+def create_data_pipeline(config_path: Union[str, dict]) -> DataPipeline:
     """Factory function to create a data pipeline from a configuration file or dictionary.
     
     Args:
