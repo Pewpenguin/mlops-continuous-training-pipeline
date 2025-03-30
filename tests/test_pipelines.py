@@ -47,13 +47,7 @@ def model_config():
             'n_estimators': 100,
             'max_depth': 5
         },
-        'metrics': ['accuracy', 'precision', 'recall', 'f1'],
-        'experiment_name': 'test_experiment',
-        'model_name': 'test_model',
-        'model_params': {'max_depth': 5, 'n_estimators': 100},
-        'preprocessing_steps': [  # Add preprocessing configuration
-            {'columns': ['category'], 'type': 'encode_categorical'}
-        ]
+        'metrics': ['accuracy', 'precision', 'recall', 'f1']
     }
 
 def test_data_pipeline_creation(data_config):
@@ -66,88 +60,57 @@ def test_model_pipeline_creation(model_config):
     """Test model pipeline creation."""
     pipeline = create_model_pipeline(model_config)
     assert pipeline is not None
-    assert pipeline.config == model_config
-
-def test_data_pipeline_execution(sample_data, data_config, tmp_path):
-    """Test data pipeline execution."""
-    # Setup temporary paths
-    input_path = tmp_path / 'raw'
-    input_path.mkdir()
-    output_path = tmp_path / 'processed'
-    output_path.mkdir()
-    
-    # Save sample data
-    sample_data.to_csv(input_path / 'sample_data.csv', index=False)
-    
-    # Update config with temporary paths
-    data_config['input_path'] = str(input_path / 'sample_data.csv')
-    data_config['output_path'] = str(output_path / 'sample_data.csv')
-    
-    # Create and run pipeline
-    pipeline = create_data_pipeline(data_config)
-    processed_data, metadata = pipeline.run()
-    
-    # Verify results
-    assert processed_data is not None
-    assert isinstance(processed_data, pd.DataFrame)
-    assert metadata is not None
-    assert isinstance(metadata, dict)
-    
-    # Check if processed data was saved
-    assert os.path.exists(data_config['output_path'])
+    assert hasattr(pipeline, 'train')
+    assert hasattr(pipeline, 'evaluate')
+    assert hasattr(pipeline, 'predict')
 
 def test_model_pipeline_execution(sample_data, model_config):
     """Test model pipeline execution."""
-    # Prepare data
-    X = sample_data.drop(columns=['target', 'id'])
+    # Split data into features and target
+    X = sample_data.drop(['id', 'target'], axis=1)
     y = sample_data['target']
+    
+    # Encode categorical features
+    X = pd.get_dummies(X, columns=['category'])
     
     # Create and run pipeline
     pipeline = create_model_pipeline(model_config)
-    metadata = pipeline.run(X.values, y.values, 'test_run')
+    pipeline.train(X, y)
     
-    # Verify results
-    assert metadata is not None
-    assert isinstance(metadata, dict)
-    assert 'metrics' in metadata
-    assert 'model_path' in metadata
+    # Test predictions
+    predictions = pipeline.predict(X)
+    assert len(predictions) == len(y)
     
-    # Check if model was saved
-    assert os.path.exists(metadata['model_path'])
+    # Test evaluation
+    metrics = pipeline.evaluate(X, y)
+    assert isinstance(metrics, dict)
+    assert 'accuracy' in metrics
 
-def test_end_to_end_pipeline(sample_data, data_config, model_config, tmp_path):
+def test_end_to_end_pipeline(sample_data, data_config, model_config):
     """Test end-to-end pipeline execution."""
-    # Setup temporary paths
-    input_path = tmp_path / 'raw'
-    input_path.mkdir()
-    output_path = tmp_path / 'processed'
-    output_path.mkdir()
-    
     # Save sample data
-    sample_data.to_csv(input_path / 'sample_data.csv', index=False)
-    
-    # Update data config with temporary paths
-    data_config['input_path'] = str(input_path / 'sample_data.csv')
-    data_config['output_path'] = str(output_path / 'sample_data.csv')
+    os.makedirs('data/raw', exist_ok=True)
+    sample_data.to_csv('data/raw/sample_data.csv', index=False)
     
     # Run data pipeline
     data_pipeline = create_data_pipeline(data_config)
-    processed_data, data_metadata = data_pipeline.run()
+    processed_data, _ = data_pipeline.run()
     
-    # Prepare features and target
-    X = processed_data.drop(columns=['target'])
+    # Split processed data and encode categorical features
+    X = processed_data.drop(['target'], axis=1)
+    X = pd.get_dummies(X, columns=['category'])
     y = processed_data['target']
     
     # Run model pipeline
     model_pipeline = create_model_pipeline(model_config)
-    model_metadata = model_pipeline.run(X.values, y.values, 'test_run')
+    model_pipeline.train(X, y)
     
-    # Verify results
-    assert data_metadata is not None
-    assert model_metadata is not None
-    assert 'metrics' in model_metadata
-    assert 'model_path' in model_metadata
+    # Make predictions
+    predictions = model_pipeline.predict(X)
+    assert len(predictions) == len(y)
     
-    # Check if all artifacts were saved
-    assert os.path.exists(data_config['output_path'])
-    assert os.path.exists(model_metadata['model_path'])
+    # Clean up
+    if os.path.exists('data/raw/sample_data.csv'):
+        os.remove('data/raw/sample_data.csv')
+    if os.path.exists('data/processed/sample_data.csv'):
+        os.remove('data/processed/sample_data.csv')

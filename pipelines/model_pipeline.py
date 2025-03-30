@@ -111,7 +111,7 @@ class ModelTrainer:
 
 
 class ModelEvaluator:
-    """Evaluates model performance on validation data."""
+    """Handles model evaluation and metric computation."""
     
     def __init__(self, config: Dict[str, Any]):
         """Initialize the model evaluator.
@@ -121,8 +121,8 @@ class ModelEvaluator:
         """
         self.config = config
         self.task_type = config.get('task_type', 'classification')
-        self.metrics = config.get('metrics', [])
-        
+        self.metrics = config.get('metrics', ['accuracy'] if self.task_type == 'classification' else ['mse'])
+    
     def evaluate(self, model: BaseEstimator, X_val: pd.DataFrame, y_val: pd.Series) -> Dict[str, float]:
         """Evaluate the model on validation data.
         
@@ -271,9 +271,44 @@ class ModelPipeline:
             config: Configuration dictionary for the pipeline
         """
         self.config = config
-        self.trainer = ModelTrainer(config.get('trainer', {}))
-        self.evaluator = ModelEvaluator(config.get('evaluator', {}))
-        self.registry = ModelRegistry(config.get('registry', {}))
+        self.trainer = ModelTrainer(config)
+        self.evaluator = ModelEvaluator(config)
+        
+    def train(self, X: pd.DataFrame, y: pd.Series) -> None:
+        """Train the model with the given data.
+        
+        Args:
+            X: Feature DataFrame
+            y: Target series
+        """
+        self.trainer._create_model()
+        self.trainer.train(X, y)
+        
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        """Make predictions using the trained model.
+        
+        Args:
+            X: Feature DataFrame
+            
+        Returns:
+            Model predictions
+        """
+        if self.trainer.model is None:
+            raise ValueError("Model must be trained before making predictions")
+        return self.trainer.model.predict(X)
+        
+    def evaluate(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, float]:
+        """Evaluate model performance.
+        
+        Args:
+            X: Feature DataFrame
+            y: Target series
+            
+        Returns:
+            Dictionary of evaluation metrics
+        """
+        predictions = self.predict(X)
+        return self.evaluator.evaluate(self.trainer.model, X, y)
         
         # Data split parameters
         self.test_size = config.get('test_size', 0.2)
@@ -344,19 +379,22 @@ class ModelPipeline:
         return results
 
 
-def create_model_pipeline(config_path: str) -> ModelPipeline:
-    """Factory function to create a model pipeline from a configuration file.
+def create_model_pipeline(config_path: Union[str, dict]) -> ModelPipeline:
+    """Factory function to create a model pipeline from a configuration file or dictionary.
     
     Args:
-        config_path: Path to the configuration file
+        config_path: Path to the configuration file or configuration dictionary
         
     Returns:
         Configured ModelPipeline instance
     """
     import json
     
-    with open(config_path, 'r') as f:
-        config = json.load(f)
+    if isinstance(config_path, dict):
+        config = config_path
+    else:
+        with open(config_path, 'r') as f:
+            config = json.load(f)
     
     return ModelPipeline(config)
 
